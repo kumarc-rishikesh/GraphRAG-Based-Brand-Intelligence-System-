@@ -257,6 +257,63 @@ class SimpleQASystem:
         self.neo4j_driver = neo4j_driver
         # Ensure vector index exists
         self.ensure_vector_index_exists()
+        # Define business questions that drive suggestions
+        self.business_questions = self.get_business_questions()
+    
+    def get_business_questions(self):
+        """Return predefined business questions to guide suggestions"""
+        return {
+            "brand_sentiment": {
+                "main": "What is the current brand sentiment across major sportswear competitors?",
+                "sub": [
+                    "Which brand has the most positive consumer sentiment on Twitter?",
+                    "What negative sentiment trends should Nike be concerned about?",
+                    "How does Adidas' sentiment compare to Puma in the last 30 days?",
+                    "Which specific product lines generate the most positive reactions?",
+                    "What sentiment patterns emerge around major sportswear marketing campaigns?"
+                ]
+            },
+            "collaborations": {
+                "main": "How are sportswear collaborations influencing brand perception?",
+                "sub": [
+                    "Which recent celebrity collaboration has generated the most positive engagement?",
+                    "How has the Nike x Skims collaboration affected Nike's overall sentiment?",
+                    "What types of collaborations perform best for Adidas?",
+                    "Which demographic segments respond most positively to Puma's collaboration strategy?",
+                    "How do limited-edition collaborative releases compare to standard product lines in engagement?"
+                ]
+            },
+            "trends": {
+                "main": "What consumer trends are emerging in the sportswear market?",
+                "sub": [
+                    "Which product features are most frequently mentioned positively by consumers?",
+                    "What sustainability initiatives are gaining traction with the sportswear audience?",
+                    "How are athleisure trends evolving based on social media conversations?",
+                    "Which performance technologies are customers most excited about?",
+                    "What emerging niche sports categories show growing consumer interest?"
+                ]
+            },
+            "marketing": {
+                "main": "How effective are current marketing campaigns for major sportswear brands?",
+                "sub": [
+                    "Which brand's marketing hashtags generate the most engagement?",
+                    "How successful was Nike's latest campaign compared to previous efforts?",
+                    "What messaging themes resonate most with the Under Armour audience?",
+                    "Which marketing channels drive the most positive sentiment?",
+                    "How quickly do campaign hashtags gain traction after launch?"
+                ]
+            },
+            "competition": {
+                "main": "What competitive insights can we gather about the sportswear market landscape?",
+                "sub": [
+                    "Which competitor is gaining the most positive momentum in the last quarter?",
+                    "What unique selling points do consumers associate with each major brand?",
+                    "How does New Balance's market position differ from the other major players?",
+                    "What product categories show the most competitive intensity based on consumer discussions?",
+                    "Which brands are most frequently compared to each other by consumers?"
+                ]
+            }
+        }
     
     def ensure_vector_index_exists(self):
         """Make sure the vector index exists before running queries"""
@@ -398,7 +455,7 @@ class SimpleQASystem:
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "You're a sportswear brand analyst answering questions based on tweet data."},
+                        {"role": "system", "content": "You're a sportswear brand analyst answering questions for Sarah Chen, Marketing Intelligence Director at Athletic Vision Sports. Focus on actionable insights for a retail perspective."},
                         {"role": "user", "content": f"Question: {question}\n\nTweets:\n{context}"}
                     ],
                     temperature=0.0
@@ -409,7 +466,7 @@ class SimpleQASystem:
                 res = openai.ChatCompletion.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "You're a sportswear brand analyst answering questions based on tweet data."},
+                        {"role": "system", "content": "You're a sportswear brand analyst answering questions for Sarah Chen, Marketing Intelligence Director at Athletic Vision Sports. Focus on actionable insights for a retail perspective."},
                         {"role": "user", "content": f"Question: {question}\n\nTweets:\n{context}"}
                     ],
                     temperature=0.0
@@ -419,54 +476,49 @@ class SimpleQASystem:
             logger.error(f"LLM answer error: {e}")
             return f"Error generating answer: {str(e)}", results
     
+    def categorize_question(self, question):
+        """Determine which business question category the query belongs to"""
+        question_lower = question.lower()
+        
+        # Define category keywords to match against
+        category_keywords = {
+            "brand_sentiment": ["sentiment", "positive", "negative", "feel", "opinion", "perception", "popularity", "favorable", "unfavorable"],
+            "collaborations": ["collaboration", "collab", "partnership", "skims", "celebrity", "designer", "limited edition"],
+            "trends": ["trend", "emerging", "popular", "growing", "feature", "technology", "sustainable", "athleisure"],
+            "marketing": ["marketing", "campaign", "advertisement", "hashtag", "promotion", "messaging", "slogan"],
+            "competition": ["competition", "competitor", "market", "compare", "comparison", "versus", "vs", "against"]
+        }
+        
+        # Count keyword matches for each category
+        category_scores = {category: 0 for category in category_keywords}
+        for category, keywords in category_keywords.items():
+            for keyword in keywords:
+                if keyword in question_lower:
+                    category_scores[category] += 1
+        
+        # Find the category with the highest score
+        best_category = max(category_scores.items(), key=lambda x: x[1])
+        
+        # If no keywords matched, default to a random category
+        if best_category[1] == 0:
+            import random
+            return random.choice(list(category_keywords.keys()))
+        
+        return best_category[0]
+    
     def generate_followup_questions(self, question, answer):
-        """Generate follow-up questions based on the current question and answer"""
-        try:
-            # Support both older and newer OpenAI API formats
-            prompt = f"""
-            Based on this question and answer about sportswear brands, suggest 3 natural follow-up questions that someone might ask next.
-            Keep the questions short, focused, and directly related to sportswear brands.
-            
-            Question: {question}
-            Answer: {answer}
-            
-            Format each question on its own line, without numbering or bullets.
-            """
-            
-            try:
-                # Newer format
-                client = openai.OpenAI(api_key=openai.api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You generate relevant follow-up questions about sportswear brands."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7
-                )
-                questions_text = response.choices[0].message.content.strip()
-            except (AttributeError, TypeError):
-                # Older format
-                res = openai.ChatCompletion.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You generate relevant follow-up questions about sportswear brands."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7
-                )
-                questions_text = res.choices[0].message.content.strip()
-            
-            # Parse questions from the response
-            questions = [q.strip() for q in questions_text.split('\n') if q.strip()]
-            return questions[:3]  # Ensure we only return up to 3 questions
-        except Exception as e:
-            logger.error(f"Follow-up questions error: {e}")
-            return [
-                "How does this brand compare to its competitors?",
-                "What are the trending products from this brand?",
-                "What marketing strategies is this brand using effectively?"
-            ]
+        """Generate follow-up questions based on predefined business questions"""
+        # First determine which business question category the current question belongs to
+        category = self.categorize_question(question)
+        
+        # Get related follow-up questions from our predefined list
+        available_questions = self.business_questions[category]["sub"]
+        
+        # Select 3 questions from the subquestions (or however many are available)
+        import random
+        selected_questions = random.sample(available_questions, min(3, len(available_questions)))
+        
+        return selected_questions
     
     def process_question(self, question):
         """Process a question and return answer with sources"""
@@ -684,10 +736,7 @@ with st.sidebar:
             default=["Nike", "Adidas", "Puma"]
         )
     
-    # Footer links
-    st.markdown("---")
-    st.markdown("[📚 User Guide](https://example.com)")
-    st.markdown("[💬 Report Issues](https://example.com/issues)")
+
     
     # Add time stamp
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -698,7 +747,6 @@ if st.session_state.need_rerun:
     st.session_state.need_rerun = False
     st.rerun()
 
-# Function to handle question submission and clear the input
 def handle_submit():
     if st.session_state.question_input and qa:
         # Get the question from the input widget's state
@@ -721,23 +769,33 @@ def handle_submit():
                 # Clear the input box after processing
                 st.session_state.question_input = ""
                 
-                # Set a flag to indicate we need to rerun after the callback completes
-                st.session_state.need_rerun = True
+                # Use direct rerun without setting a flag to prevent double-clicking
+                st.rerun()
             except Exception as e:
                 st.error(f"Error processing question: {e}")
 
-# Main app layout based on selected view
+# For the topic buttons
+def handle_topic_selection(question):
+    st.session_state.question_input = question
+    handle_submit()
+
+# Clear conversation function that resets to the initial screen
+def clear_conversation():
+    st.session_state.messages = []
+    st.rerun()
+
+# Replace the QA interface section with this updated version
 if st.session_state.app_view == "ask":
     # QA interface
     st.title("Sportswear Brand Analytics Q&A")
-    st.write("Ask questions about Nike, Adidas, Puma and other sportswear brands")
     
-    # Clear history button
+    # Add back the clear conversation button
     col1, col2 = st.columns([6, 1])
+    with col1:
+        st.write("Ask questions about Nike, Adidas, Puma and other sportswear brands")
     with col2:
-        if st.button("Clear History"):
-            st.session_state.messages = []
-            st.rerun()
+        if st.button("Clear Conversation"):
+            clear_conversation()
     
     # Display chat history
     for message in st.session_state.messages:
@@ -772,24 +830,48 @@ if st.session_state.app_view == "ask":
                     message_idx = st.session_state.messages.index(message)
                     unique_key = f"suggestion_{message_idx}_{i}"
                     if cols[i].button(question, key=unique_key):
-                        try:
-                            # Set this as the new question and process it
-                            st.session_state.question_input = question
-                            handle_submit()
-                        except Exception as e:
-                            st.error(f"Error processing suggested question: {e}")
+                        # Directly set the question and call handle_submit
+                        st.session_state.question_input = question
+                        handle_submit()
+    
+    # Show topic suggestions if this is the first interaction
+    if not st.session_state.messages:
+        st.markdown("### Explore Topics")
+        st.markdown("Select a topic to begin your analysis:")
+        
+        # Get the main business questions from the QA system
+        business_questions = qa.business_questions
+        
+        # Create a grid of topic buttons
+        cols = st.columns(3)  # 3 columns for 5 topics
+        
+        for i, (category, questions) in enumerate(business_questions.items()):
+            col_idx = i % 3
+            with cols[col_idx]:
+                # Create a card-like container for each topic
+                st.markdown(f"""
+                <div style="background-color: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                    <h4 style="color: #ff9900; margin-top: 0;">{questions['main']}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Add a button to select this topic with the callback pattern
+                topic_question = questions['main']
+                if st.button(f"Explore {category.replace('_', ' ').title()}", key=f"topic_{category}"):
+                    st.session_state.question_input = topic_question
+                    handle_submit()
     
     # Input section at the bottom
     st.markdown("---")
     
-    # Text input with callback
+    # Text input with callback (use on_change to prevent double-clicking issue)
     st.text_input(
         "Your question:",
         key="question_input",
         on_change=handle_submit
     )
     
-    # Add Ask button
+    # Add Ask button (use on_click instead of the previous approach)
     st.button("Ask", on_click=handle_submit)
 
 else:
