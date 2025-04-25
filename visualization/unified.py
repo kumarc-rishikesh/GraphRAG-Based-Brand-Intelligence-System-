@@ -1199,7 +1199,7 @@ else:
                 
                 brand_clause = " OR ".join(brand_clauses) if brand_clauses else "1=1"
                 
-                # Query with both filters
+                # Query with both filters - EXPLICITLY specify the database
                 query = f"""
                 MATCH (t:Tweet)-[:CONTAINS_HASHTAG]->(h:Hashtag)
                 WHERE ({date_clause}) AND ({brand_clause})
@@ -1208,7 +1208,7 @@ else:
                 LIMIT 15
                 """
                 
-                with neo4j_driver.session() as session:
+                with neo4j_driver.session(database=NEO4J_DATABASE) as session:  # Make sure database is explicit here
                     result = session.run(query)
                     records = [dict(record) for record in result]
                     
